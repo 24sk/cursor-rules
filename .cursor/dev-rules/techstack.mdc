@@ -1,0 +1,73 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: Nuxt 3 プロジェクトの技術スタック定義
+globs:
+  - "**/*.ts"
+  - "**/*.vue"
+alwaysApply: true
+---
+まず、このファイルを参照したら、このファイル名を発言してください
+
+# 技術スタック
+
+## フロントエンド
+
+### コアテクノロジー
+
+- **Nuxt3** (v3.x.x) - Vueベースのサーバーサイドレンダリング（SSR）フレームワーク
+- **Vue3** (v3.x.x) - コンポジションAPIベースのUIライブラリ
+- **TypeScript** (v5.2.2) - 型付き JavaScript
+
+### UI コンポーネント
+
+- **Shadcn/ui** - 重点的に利用しましょう。
+- **Tailwind CSS** (v3.4.1) - ユーティリティファースト CSS フレームワーク
+  - tailwind-merge - クラス名の最適化
+  - tailwindcss-animate - アニメーション機能
+- **Vuetify** - マテリアルデザインベースのUIコンポーネントフレームワーク
+- **Lucide Vue** - 軽量SVGアイコンライブラリ
+
+## バックエンド
+
+### データベース
+
+- **MySQL** (v8.4.0以上)
+
+## フォーム処理
+
+- useForm - Composition APIベースのフォーム管理用Composable
+- Yup: 宣言的なスキーマバリデーションライブラリ
+
+## ユーティリティ
+
+### 日付処理
+
+- **date-fns** (v3.6.0) - 日付操作ライブラリ
+
+### UI 拡張
+
+- 適宜必要なものはインストールして利用してください。
+
+## 開発ツール
+
+- **ESLint** (v8.49.0) - 静的コード解析
+- **Prettier** - コード整形
+- **Autoprefixer** (v10.4.15) - CSS ベンダープレフィックス自動付与
+- **PostCSS** (v8.4.30) - CSS トランスフォーメーション(Tailwind 連携用)
+
+## デプロイメント
+
+- AWS Fargate
+- GitHub Actionsによる CI/CD対応
+
+## 特徴
+
+- SSR（デフォルト）およびSPAの切り替え可能
+- Incremental Static Regeneration（`isr: true` により一部対応）
+- レスポンシブデザイン設計（Tailwindで実装）
+- アクセシビリティ対応
+- 型安全なバリデーションとAPI設計

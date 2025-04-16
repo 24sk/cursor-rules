@@ -1,0 +1,443 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: Apply this rule to the entire repository
+globs: 
+alwaysApply: true
+---
+まず、このファイルを参照したら、このファイル名を発言してください
+
+# Nuxt ベストプラクティス実装ルール
+
+## 1. ルーティングとファイル構造
+
+### ディレクトリ構造例
+
+├── app.vue
+├── auth.d.ts
+├── components
+│   ├── auth
+│   ├── CertificateUploader.vue
+│   └── dog
+├── composables
+│   ├── auth
+│   ├── dogs
+│   ├── useFetchWithCache.ts
+│   ├── useLoading.ts
+│   ├── useSnackbar.ts
+│   └── useValidationRules.ts
+├── constants
+│   └── api.ts
+├── docker
+│   ├── app
+│   ├── mysql
+│   └── postgres
+├── docker-compose.yml
+├── init_data
+├── middleware
+│   └── client-session-guard.ts
+├── nuxt.config.ts
+├── package-lock.json
+├── package.json
+├── pages
+│   ├── auth
+│   ├── dogs
+│   └── index.vue
+├── plugins
+│   ├── amplify.ts
+│   ├── inject.ts
+│   └── vuetify.ts
+├── public
+│   ├── favicon.ico
+│   └── robots.txt
+├── README.md
+├── schemes
+│   ├── auth
+│   ├── dogs
+│   └── index.ts
+├── server
+│   ├── api
+│   ├── db
+│   ├── middleware
+│   ├── plugins
+│   ├── routes
+│   └── tsconfig.json
+├── services
+│   ├── auth.service.ts
+│   ├── dog.service.ts
+│   ├── s3.service.ts
+│   └── user.service.ts
+├── stores
+│   └── auth.ts
+├── structure.md
+├── tsconfig.json
+├── types
+│   ├── activities
+│   ├── api
+│   ├── dogs
+│   ├── index.ts
+│   ├── s3
+│   └── users
+└── utils
+    ├── db.ts
+    ├── env.ts
+    ├── fileValidationRules.ts
+    └── index.ts
+
+## 2. コンポーネント設計
+
+- SSR（サーバーサイドレンダリング）を基本とし、パフォーマンスを意識すること
+- 再利用性のある最小単位に分割し、**単一責任原則**を守ること
+- プロパティ（props）が多くなりすぎる場合は、`slot`を活用して柔軟な構造を実現すること
+- 不要な`<script setup>`や依存を避け、軽量な設計を意識すること
+
+```vue
+// クライアントサイド専用コンポーネント
+<template>
+  <client-only>
+    <MyClientComponent />
+  </client-only>
+</template>
+```
+
+### 命名規則と構成
+- コンポーネント名は`PascalCase`とすること
+- 再利用コンポーネントは`components/common/`などに配置すること
+- ページスコープ専用であれば`components/pages/TopPage/Hero.vue`のように明示すること
+
+## 3. API実装
+
+- `server/api/` ディレクトリにAPIエンドポイントを作成すること
+- HTTP メソッドごとにファイル名を分けて記述すること（例: `[id].get.ts`, `[id].put.ts`）
+- APIの入力（リクエスト body / params / query）と出力（レスポンス）には、必ず型定義を明示すること
+- DBアクセス処理は `server/db/repositories/` 内に機能ごとのフォルダを作成し、その中で実行すること
+- 必要に応じて、ログ出力や監視ツールへの通知処理を追加すること
+
+```typescript
+// server/api/dogs/[id].put.ts
+import { dogSchema } from '~/schemes'; // Yupを想定
+import { updateDog } from '~/server/db/repositories/dog'; // フォルダ名を指定して明示化
+import { BaseApiResponse, Dog } from '~/types';
+
+export default defineEventHandler(async (event): Promise<BaseApiResponse> => {
+  try {
+    const id = event.context.params?.id;
+    if (!id) {
+      throw createError({
+        statusCode: 400,
+        message: 'IDが指定されていません',
+      });
+    }
+
+    const body = await readBody<Dog>(event);
+
+    // スキーマバリデーション
+    await dogSchema.validate(body);
+
+    await updateDog({ id, ...body }); // idも一緒に渡すほうが安全なケースもあり
+
+    return {
+      statusCode: 200,
+      message: '愛犬情報を更新しました',
+    };
+  } catch (error: any) {
+    // バリデーションエラーやDBエラーなどに応じた詳細メッセージ処理も可
+    throw createError({
+      statusCode: error.statusCode || 500,
+      message: error.message || 'サーバーエラーが発生しました',
+    });
+  }
+});
+```
+
+### クライアントサイドのデータ操作
+
+- API呼び出しは`$api`などプラグインを経由して行うこと
+- ローディング状態は`useLoading`などの`Composable`で管理すること
+- CSRFトークンなどのセキュリティトークンは事前に取得すること
+
+```typescript
+// /server/api/dogs/[id].put.ts
+const { isLoading, withLoading } = useLoading();
+const csrfToken = await $auth.getCsrfToken();
+```
+
+### キャッシュと再検証(ISR・SWR等)
+
+- デフォルトでキャッシュを活用
+- 適切な再検証戦略を選択:
+
+### エラーハンドリング
+
+- try-catch ブロックでエラーを検出し、適切なフィードバックを返却すること
+- クライアントサイドでは適切なエラーハンドリングとユーザーフィードバックを実装すること
+- 例外処理は `createError()` を使い、適切な `statusCode` と `message` を含め、構造化されたエラーを投げること
+
+```typescript
+// /server/api/dogs/[id].put.ts
+throw createError({
+      statusCode: error.statusCode || 500,
+      message: error.message || 'サーバーエラーが発生しました',
+    });
+```
+
+### セキュリティ(認証・認可・CSRF)
+
+- server/middleware/ にて認証・認可のミドルウェアを実装し、必要なAPIへの適用を行うこと
+- プライベートAPIでは CSRF トークンの検証を必須とすること
+- レートリミットの実装を検討(例：IP制限、短時間のPOST頻度制限など)
+- フロントエンドと共通の型定義ファイル（`~/types/` など）を使用し、Yupでスキーマバリデーションを行うこと
+
+```typescript
+// /server/api/dogs/[id].put.ts
+// スキーマバリデーション
+    await dogSchema.validate(body);
+```
+
+```typescript
+// /server/middleware/server-session-guard.ts
+// 認証
+    import { UserSession } from '#auth-utils';
+import {
+  deleteSession,
+  verifyCsrfToken,
+  verifySession,
+} from '../db/repositories';
+
+/**
+ * ルート情報を表す型
+ */
+interface Route {
+  path: string;
+  method: string;
+}
+
+/**
+ * 公開ルート（認証不要）の定義
+ */
+const publicRoutes: Route[] = [
+  { path: '/auth/login', method: 'GET' },
+  { path: '/auth/signup', method: 'GET' },
+  { path: '/api/auth/login', method: 'POST' },
+  { path: '/auth/google', method: 'GET' },
+  { path: '/api/auth/google', method: 'GET' },
+  { path: '/api/auth/signup', method: 'POST' },
+];
+
+/**
+ * 認証・CSRF検証が必要なプライベートルートの定義
+ */
+// const privateRoutes: Route[] = [
+//   { path: '/', method: 'GET' },
+//   { path: '/dogs/register', method: 'GET' },
+//   { path: '/api/dogs/register', method: 'POST' },
+//   { path: '/api/auth/csrf-token', method: 'GET' },
+//   { path: '/api/_auth/session', method: 'GET' },
+//   { path: '/api/_auth/session', method: 'DELETE' },
+//   { path: '/api/files/upload', method: 'POST' },
+// ];
+
+/**
+ * 指定のパスとメソッドが公開ルートかどうかを判定する
+ */
+const isPublicRoute = (path: string, method: string): boolean => {
+  // Googleログインの場合は認証・CSRF検証をスキップする
+  if (path.includes('google') && method === 'GET') return true;
+  return publicRoutes.some(
+    (route) => route.path === path && route.method === method,
+  );
+};
+
+/**
+ * 指定のパスとメソッドがプライベートルートかどうかを判定する
+ */
+// const isPrivateRoute = (path: string, method: string): boolean =>
+//   privateRoutes.some((route) => route.path === path && route.method === method);
+
+/**
+ * イベントハンドラー
+ */
+export default defineEventHandler(async (event) => {
+  const { path, method } = event;
+  console.log(`パス:${path} - ${method}`);
+
+  // 公開ルートの場合は認証・CSRF検証をスキップする
+  if (isPublicRoute(path, method)) {
+    return;
+  }
+
+  // プライベートルートかどうかチェック（定義されていない場合は404）
+  // if (!isPrivateRoute(path, method)) {
+  //   throw createError({ status: 404, statusMessage: 'Not Found' });
+  // }
+
+  let session: UserSession | null = null;
+  try {
+    console.log('サーバーミドルウェア');
+    // セッションの取得
+    session = await requireUserSession(event);
+    if (!session || !session.user) {
+      throw createError({ status: 401, statusMessage: 'Invalid session' });
+    }
+    const { id } = session.user;
+    console.log('session', session);
+
+    // セッション検証
+    if (!verifySession(id, session.token)) {
+      throw createError({ status: 401, statusMessage: 'Invalid session' });
+    }
+
+    // GET以外の場合は CSRF トークンの検証
+    if (method !== 'GET') {
+      const { csrfToken } = await readBody<{ csrfToken?: string }>(event);
+      if (typeof csrfToken !== 'string') {
+        throw createError({ status: 401, statusMessage: 'CSRF token missing' });
+      }
+      if (!verifyCsrfToken(id, csrfToken)) {
+        throw createError({
+          status: 401,
+          statusMessage: 'CSRF token mismatch',
+        });
+      }
+    }
+
+    // 特定のAPIレスポンス（セッション情報を返す処理）
+    if (path === '/api/_auth/session' && method === 'GET') {
+      console.log('/api/_auth/session:GETレスポンス');
+      await sendWebResponse(event, Response.json({ user: session.user }));
+    }
+  } catch (error: any) {
+    // セッションが存在する場合のみクッキーのクリアおよびセッション削除を実施
+    if (session) {
+      console.log('セッション削除');
+      setCookie(event, 'nuxt-session', '');
+      if (session.user) {
+        await deleteSession(session.user.id);
+      }
+    }
+
+    // APIパスの場合はエラーをそのまま投げる
+    if (path.startsWith('/api/')) {
+      console.log('APIエラー');
+      throw error;
+    } else {
+      console.log('ログイン画面リダイレクト');
+      // その他の場合はログイン画面へリダイレクト
+      await sendRedirect(event, '/auth/login');
+    }
+  }
+});
+```
+
+## 4. パフォーマンス最適化
+
+### 画像最適化
+
+- `@nuxt/image`モジュールを使用
+
+```typescript
+<template>
+  <NuxtImg
+    src="/path/to/image.jpg"
+    alt="説明"
+    width="800"
+    height="600"
+    format="webp"
+    preload
+  />
+</template>
+```
+
+### スクリプト最適化
+
+- `useHead()`を使用して外部スクリプトを最適化
+
+```typescript
+// 任意のコンポーネント setup() 内
+useHead({
+  script: [
+    {
+      src: 'https://example.com/script.js',
+      async: true,
+      defer: true, // lazyOnload 相当
+    },
+  ],
+});
+```
+
+## 5. エラーハンドリング
+
+### エラーバウンダリ
+
+- error.vue や showError() を使用してエラーバウンダリを構築
+- APIやロジックでエラーが発生した際には`createError()`を使ってユーザーフレンドリーなメッセージを表示
+
+### ローディング状態
+
+- `Composables`で管理し、各コンポーネントやページで再利用可能にする
+- 状態管理は`ref`を使い、ロジックは`withLoading`などのヘルパー関数で共通化すること
+
+## 6. 型安全性
+
+### TypeScript
+
+- 厳格な型チェックを有効化
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}
+```
+
+### API ルート
+
+- リクエスト/レスポンスの型を定義
+
+```typescript
+type ResponseData = {
+  message: string;
+};
+```
+
+## 7. セキュリティ
+
+### 環境変数
+
+- 機密情報は`.env`に保存し、**サーバーサイド**専用とする
+- フロントエンドに公開してよい環境変数は`NUXT_PUBLIC_`プレフィックスを使用すること
+
+### CSP (Content Security Policy)
+
+- 適切な CSP ヘッダーを設定
+- `nuxt.config.ts`でセキュリティヘッダーを構成
+
+## 8. デプロイメント
+
+### ビルド最適化
+
+- 本番環境では必ず`nuxt build && nuxt start`を実行し、本番ビルドを使用すること
+- `nuxt dev`はローカル開発専用とする
+- Dockerビルドもローカルと本番を明確に分けて管理し、本番はビルドされた資材のみをアップロードすること
+
+### 環境変数
+
+- `.env`, `.env.production`, `.env.staging`など、環境ごとに.envファイルを分割管理すること
+- `runtimeConfig`を通じてサーバー／クライアントそれぞれに適切に変数を露出すること
+
+## 9. メンテナンス
+
+### 依存関係
+
+- `npm outdated`や`ncu（npm-check-updates）`を使用して 依存パッケージを定期的に更新
+- `npm audit`を活用し、セキュリティ脆弱性をモニタリング
+
+### パフォーマンスモニタリング
+
+- Core Web Vitals を定期的に確認
+- エラーログを監視
